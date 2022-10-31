@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-use futures_util::{future, StreamExt};
+use futures_util::{future, FutureExt, StreamExt};
 #[cfg(feature = "dns-over-rustls")]
 use rustls::{Certificate, PrivateKey};
 use tokio::{net, task::JoinHandle};
@@ -95,6 +95,8 @@ impl<T: RequestHandler> ServerFuture<T> {
                         self::handle_raw_request(message, Protocol::Udp, handler, stream_handle)
                             .await;
                     });
+
+                    reap_tasks(&mut inner_join_set);
                 }
 
                 // TODO: let's consider capturing all the initial configuration details so that the socket could be recreated...
@@ -185,6 +187,8 @@ impl<T: RequestHandler> ServerFuture<T> {
                             .await;
                         }
                     });
+
+                    reap_tasks(&mut inner_join_set);
                 }
             }
         });
@@ -323,6 +327,8 @@ impl<T: RequestHandler> ServerFuture<T> {
                             .await;
                         }
                     });
+
+                    reap_tasks(&mut inner_join_set);
                 }
             }
         });
@@ -466,6 +472,8 @@ impl<T: RequestHandler> ServerFuture<T> {
                             .await;
                         }
                     });
+
+                    reap_tasks(&mut inner_join_set);
                 }
             }
         });
@@ -596,6 +604,8 @@ impl<T: RequestHandler> ServerFuture<T> {
 
                         h2_handler(handler, tls_stream, src_addr, dns_hostname).await;
                     });
+
+                    reap_tasks(&mut inner_join_set);
                 }
             }
         });
@@ -676,6 +686,8 @@ impl<T: RequestHandler> ServerFuture<T> {
                             warn!("quic stream processing failed from {src_addr}: {e}")
                         }
                     });
+
+                    reap_tasks(&mut inner_join_set);
                 }
             }
         });
@@ -710,6 +722,11 @@ impl Drop for ServerTask {
     fn drop(&mut self) {
         self.0.abort();
     }
+}
+
+/// Reap finished tasks from a `JoinSet`, without awaiting or blocking.
+fn reap_tasks(join_set: &mut JoinSet<()>) {
+    while FutureExt::now_or_never(join_set.join_next()).is_some() {}
 }
 
 pub(crate) async fn handle_raw_request<T: RequestHandler>(
